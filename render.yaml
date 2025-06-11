@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: ict-trading-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
+      - key: BOT_TOKEN
+        sync: false
+      - key: CHAT_ID
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MAX_MEMORY_MB
+        value: 500
+      - key: SIGNAL_EXPIRY_HOURS
+        value: 4 
