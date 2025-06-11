@@ -5,6 +5,8 @@ from datetime import datetime
 from utils import get_env_variable
 
 logger = logging.getLogger(__name__)
+# Set logger to DEBUG level
+logger.setLevel(logging.DEBUG)
 
 class TelegramError(Exception):
     """Custom exception for Telegram-related errors"""
@@ -14,11 +16,41 @@ class TelegramNotifier:
     def __init__(self):
         self.bot_token = get_env_variable("BOT_TOKEN")
         self.chat_id = get_env_variable("CHAT_ID")
+        logger.debug(f"Initializing TelegramNotifier with chat_id: {self.chat_id}")
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
+        logger.debug(f"Base URL configured: {self.base_url}")
         self.last_message_time = 0
-        self.min_message_interval = 1  # Minimum seconds between messages
+        self.min_message_interval = 1
         self.max_retries = 3
         self.retry_delay = 5
+        
+        # Verify bot token on initialization
+        self.verify_bot()
+
+    def verify_bot(self):
+        """Verify bot token and permissions"""
+        try:
+            logger.debug("Verifying bot token...")
+            response = requests.get(f"{self.base_url}/getMe", timeout=10)
+            response.raise_for_status()
+            bot_info = response.json()
+            logger.info(f"Bot verification successful: @{bot_info['result']['username']}")
+            
+            # Test chat permission
+            logger.debug("Testing chat permissions...")
+            test_response = requests.get(
+                f"{self.base_url}/getChat",
+                params={"chat_id": self.chat_id},
+                timeout=10
+            )
+            test_response.raise_for_status()
+            logger.info("Chat permissions verified successfully")
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Bot verification failed: {str(e)}")
+            if hasattr(e.response, 'text'):
+                logger.error(f"Response content: {e.response.text}")
+            raise TelegramError(f"Bot verification failed: {str(e)}")
 
     def format_signal_message(self, signal):
         """
@@ -67,21 +99,37 @@ class TelegramNotifier:
             
         for attempt in range(retries):
             try:
+                logger.debug(f"Attempt {attempt + 1}/{retries} to send message")
+                logger.debug(f"Endpoint: {endpoint}")
+                logger.debug(f"Payload: {payload}")
+                
                 # Rate limiting
                 now = time.time()
                 if now - self.last_message_time < self.min_message_interval:
-                    time.sleep(self.min_message_interval - (now - self.last_message_time))
+                    wait_time = self.min_message_interval - (now - self.last_message_time)
+                    logger.debug(f"Rate limiting: waiting {wait_time} seconds")
+                    time.sleep(wait_time)
                 
                 response = requests.post(f"{self.base_url}/{endpoint}", data=payload, timeout=10)
+                logger.debug(f"Response status code: {response.status_code}")
+                logger.debug(f"Response content: {response.text}")
+                
                 response.raise_for_status()
                 
                 self.last_message_time = time.time()
                 return response.json()
                 
             except requests.exceptions.RequestException as e:
-                logger.warning(f"Attempt {attempt + 1}/{retries} failed: {str(e)}")
+                logger.error(f"Attempt {attempt + 1}/{retries} failed")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error message: {str(e)}")
+                
+                if hasattr(e, 'response') and e.response is not None:
+                    logger.error(f"Response status code: {e.response.status_code}")
+                    logger.error(f"Response content: {e.response.text}")
                 
                 if attempt < retries - 1:
+                    logger.info(f"Waiting {self.retry_delay} seconds before retry")
                     time.sleep(self.retry_delay)
                 else:
                     raise TelegramError(f"Failed to send message after {retries} attempts: {str(e)}")
@@ -102,6 +150,10 @@ class TelegramNotifier:
             "text": message,
             "parse_mode": parse_mode
         }
+        
+        logger.debug("Preparing to send message")
+        logger.debug(f"Message length: {len(message)} characters")
+        logger.debug(f"Parse mode: {parse_mode}")
         
         try:
             result = self._send_with_retry("sendMessage", payload)
@@ -126,32 +178,32 @@ def send_test_message():
     """
     Sends a test message to verify Telegram bot configuration
     """
-    notifier = TelegramNotifier()
-    test_signal = {
-        "asset": "BTC/USD",
-        "direction": "BUY",
-        "entry": 31250.75,
-        "stop_loss": 30980.25,
-        "take_profit": 31800.50,
-        "kill_zone": "London",
-        "setup": "FVG_bullish + OB_bullish + BOS_bullish",
-        "risk": "0.8%",
-        "confidence": "3/4 confluences"
-    }
-    
+    logger.info("Initializing test message function")
     try:
-        logger.info("Sending test signal...")
-        notifier.send_signal(test_signal)
-        logger.info("Test signal sent successfully")
-    except TelegramError as e:
-        logger.error(f"Failed to send test signal: {e}")
+        notifier = TelegramNotifier()
+        test_message = """
+*ICT Trading Bot - Test Message* 🤖
+
+This is a test message to verify the bot's connectivity.
+
+*Bot Status:* Online ✅
+*Time:* {}
+
+If you're seeing this message, the bot is properly configured and ready to send trading signals!
+""".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        logger.info("Sending test message...")
+        result = notifier.send_message(test_message)
+        logger.info("Test message sent successfully")
+        return result
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f"Failed to send test message: {e}")
+        raise
 
 if __name__ == '__main__':
     # Configure logging
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     send_test_message()
