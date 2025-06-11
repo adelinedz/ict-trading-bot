@@ -12,7 +12,7 @@ import pytz
 
 from market_data import get_historical_data, MarketDataError, get_market_hours
 from signal_engine import generate_signal, is_in_kill_zone
-from telegram_notifier import TelegramNotifier, TelegramError
+from telegram_notifier import TelegramNotifier, TelegramError, send_test_message
 from utils import get_env_variable, ConfigError
 
 # Configure logging
@@ -28,6 +28,14 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Send initial test message
+try:
+    logger.info("Sending startup test message...")
+    send_test_message()
+    logger.info("Test message sent successfully!")
+except Exception as e:
+    logger.error(f"Failed to send test message: {e}")
 
 # Configure timezone
 EST_TZ = pytz.timezone('US/Eastern')
